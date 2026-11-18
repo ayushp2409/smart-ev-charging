@@ -42,6 +42,7 @@ export const App: React.FC = () => {
     logs,
     chartData,
     submitRequest,
+    admitWaitingVehicle,
     completeVehicleCharging,
     loadScenario,
     resetSimulation,
@@ -112,6 +113,7 @@ export const App: React.FC = () => {
               onSelectVehicle={setSelectedVehicleId}
               onCompleteCharging={completeVehicleCharging}
               onOpenAddModal={() => setIsAddModalOpen(true)}
+              onAdmitWaitingVehicle={admitWaitingVehicle}
               onOpenRequestForVehicle={(id) => {
                 setSelectedVehicleId(id);
                 setActiveTab('workbench');
@@ -165,6 +167,7 @@ export const App: React.FC = () => {
               onSelectVehicle={setSelectedVehicleId}
               onCompleteCharging={completeVehicleCharging}
               onOpenAddModal={() => setIsAddModalOpen(true)}
+              onAdmitWaitingVehicle={admitWaitingVehicle}
               onOpenRequestForVehicle={(id) => {
                 setSelectedVehicleId(id);
                 setActiveTab('workbench');

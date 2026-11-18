@@ -45,8 +45,21 @@ export const RequestWorkbench: React.FC<RequestWorkbenchProps> = ({
   const currentVehicle = vehicles.find(v => v.id === currentVehicleId);
 
   // Request form state
-  const [reqPorts, setReqPorts] = useState<number>(0);
+  const [reqPorts, setReqPorts] = useState<number>(currentVehicle?.allocation[0] === 0 ? 1 : 0);
   const [reqPowerUnits, setReqPowerUnits] = useState<number>(2);
+
+  // Auto-set 1 port whenever switching to a waiting vehicle
+  React.useEffect(() => {
+    if (currentVehicle) {
+      if (currentVehicle.allocation[0] === 0) {
+        setReqPorts(1);
+      } else {
+        setReqPorts(0);
+      }
+      const need = calculateNeed(currentVehicle.maxClaim, currentVehicle.allocation);
+      setReqPowerUnits(Math.min(2, need[1] > 0 ? need[1] : 2));
+    }
+  }, [currentVehicleId]);
 
   const currentNeed: ResourceVector = currentVehicle 
     ? calculateNeed(currentVehicle.maxClaim, currentVehicle.allocation)

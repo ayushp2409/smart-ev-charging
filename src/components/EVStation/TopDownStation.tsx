@@ -21,6 +21,7 @@ interface TopDownStationProps {
   onCompleteCharging: (id: string) => void;
   onOpenAddModal: () => void;
   onOpenRequestForVehicle: (id: string) => void;
+  onAdmitWaitingVehicle?: (id: string) => void;
 }
 
 export const TopDownStation: React.FC<TopDownStationProps> = ({
@@ -32,12 +33,36 @@ export const TopDownStation: React.FC<TopDownStationProps> = ({
   onSelectVehicle,
   onCompleteCharging,
   onOpenAddModal,
-  onOpenRequestForVehicle
+  onOpenRequestForVehicle,
+  onAdmitWaitingVehicle
 }) => {
-  const bays = [1, 2, 3, 4];
+  const bays = Array.from({ length: stationConfig.totalPorts }, (_, i) => i + 1);
 
-  const bayVehicles = bays.map(bayNum => {
-    return vehicles.find(v => v.assignedBay === bayNum && v.status !== 'completed') || null;
+  // Actively charging vehicles
+  const chargingVehicles = vehicles.filter(v => v.status === 'charging');
+  const occupiedBaySet = new Set<number>();
+
+  // Map each bay to its assigned vehicle
+  const bayVehicles: (ElectricVehicle | null)[] = bays.map(bayNum => {
+    const found = chargingVehicles.find(v => v.assignedBay === bayNum);
+    if (found) occupiedBaySet.add(bayNum);
+    return found || null;
+  });
+
+  // Self-healing fallback: If any vehicle is charging but doesn't have an assignedBay,
+  // place it into the first unoccupied bay immediately so it's always visible!
+  chargingVehicles.forEach(v => {
+    if (!v.assignedBay || !bays.includes(v.assignedBay) || !bayVehicles.includes(v)) {
+      for (let i = 0; i < bays.length; i++) {
+        const bayNum = bays[i];
+        if (!bayVehicles[i]) {
+          bayVehicles[i] = v;
+          occupiedBaySet.add(bayNum);
+          v.assignedBay = bayNum;
+          break;
+        }
+      }
+    }
   });
 
   const waitingVehicles = vehicles.filter(v => v.status === 'waiting' || v.status === 'rejected');
@@ -245,12 +270,27 @@ export const TopDownStation: React.FC<TopDownStationProps> = ({
                     </div>
                   ) : (
                     /* Empty Bay State */
-                    <div className="my-auto flex flex-col items-center justify-center text-center p-4">
-                      <div className="w-12 h-12 rounded-full border border-dashed border-slate-300 flex items-center justify-center text-slate-400 mb-2">
+                    <div 
+                      onClick={() => {
+                        if (waitingVehicles.length > 0 && onAdmitWaitingVehicle) {
+                          onAdmitWaitingVehicle(waitingVehicles[0].id);
+                        } else {
+                          onOpenAddModal();
+                        }
+                      }}
+                      className="my-auto flex flex-col items-center justify-center text-center p-4 cursor-pointer group"
+                    >
+                      <div className="w-12 h-12 rounded-full border border-dashed border-slate-300 group-hover:border-emerald-500 flex items-center justify-center text-slate-400 group-hover:text-emerald-600 mb-2 transition">
                         <Plug className="w-5 h-5" />
                       </div>
-                      <p className="text-xs font-bold text-slate-600">Bay Empty</p>
-                      <p className="text-[10px] text-slate-400 font-medium mt-0.5">Ready for vehicle plug-in</p>
+                      <p className="text-xs font-bold text-slate-600 group-hover:text-emerald-700">Bay #{bayNum} Empty</p>
+                      {waitingVehicles.length > 0 ? (
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded mt-1.5 border border-emerald-200">
+                          ⚡ Click to Admit {waitingVehicles[0].id}
+                        </span>
+                      ) : (
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">Ready for vehicle plug-in</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -332,17 +372,35 @@ export const TopDownStation: React.FC<TopDownStationProps> = ({
                     )}
                   </div>
 
-                  <div className="mt-3 pt-2 border-t border-slate-200/60 flex justify-between items-center">
+                  <div className="mt-3 pt-2 border-t border-slate-200/60 flex flex-wrap gap-1.5 justify-between items-center">
                     <span className="text-[10px] text-slate-500 capitalize">{v.status}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenRequestForVehicle(v.id);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] font-bold text-white shadow-sm transition"
-                    >
-                      Request Port ⚡
-                    </button>
+                    <div className="flex items-center space-x-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onAdmitWaitingVehicle) {
+                            onAdmitWaitingVehicle(v.id);
+                          } else {
+                            onOpenRequestForVehicle(v.id);
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] font-bold text-white shadow-sm transition flex items-center gap-1 thunder-glow"
+                        title="Evaluate with Banker's Algorithm and admit to empty bay"
+                      >
+                        <Zap className="w-3 h-3 fill-white" />
+                        <span>Admit to Bay</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenRequestForVehicle(v.id);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-semibold text-slate-700 border border-slate-200 transition"
+                        title="Customize requested power"
+                      >
+                        ⚙
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

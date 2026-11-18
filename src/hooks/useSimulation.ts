@@ -94,14 +94,17 @@ export function useSimulation() {
     requestedPorts: number, 
     requestedPowerUnits: number
   ) => {
-    const req: ResourceVector = [requestedPorts, requestedPowerUnits];
     const target = vehicles.find(v => v.id === vehicleId);
     if (!target) return;
+
+    // If vehicle is waiting with 0 ports, it requires 1 port to occupy a bay
+    const actualPorts = (target.allocation[0] === 0 && requestedPorts === 0) ? 1 : requestedPorts;
+    const req: ResourceVector = [actualPorts, requestedPowerUnits];
 
     addLog(
       'banker',
       `Evaluating Request: ${target.name}`,
-      `Submitted request for ${requestedPorts} port(s) and ${unitsToKw(requestedPowerUnits, stationConfig.powerUnitKw)} kW. Running Banker's Algorithm...`,
+      `Submitted request for ${actualPorts} port(s) and ${unitsToKw(requestedPowerUnits, stationConfig.powerUnitKw)} kW. Running Banker's Algorithm...`,
       { vehicleId, request: req, available: [...available] }
     );
 
@@ -118,8 +121,12 @@ export function useSimulation() {
     if (evalResult.granted && evalResult.isSafe) {
       // Find an available bay if vehicle does not have one
       let assignedBay = target.assignedBay;
-      if (!assignedBay && requestedPorts > 0) {
-        const occupiedBays = new Set(vehicles.filter(v => v.assignedBay !== null && v.status !== 'completed').map(v => v.assignedBay));
+      if (!assignedBay) {
+        const occupiedBays = new Set(
+          vehicles
+            .filter(v => v.id !== vehicleId && v.assignedBay !== null && v.status === 'charging')
+            .map(v => v.assignedBay)
+        );
         for (let i = 1; i <= stationConfig.totalPorts; i++) {
           if (!occupiedBays.has(i)) {
             assignedBay = i;
@@ -131,7 +138,7 @@ export function useSimulation() {
       setVehicles(prev => prev.map(v => {
         if (v.id === vehicleId) {
           const newAlloc: ResourceVector = [
-            v.allocation[0] + requestedPorts,
+            Math.max(1, v.allocation[0] + actualPorts),
             v.allocation[1] + requestedPowerUnits
           ];
           return {
@@ -150,7 +157,7 @@ export function useSimulation() {
       addLog(
         'success',
         `Request Approved (Safe Sequence Guaranteed)`,
-        `Request granted! Safe sequence: ${evalResult.safetyResult?.safeSequence.join(' -> ')}. Invariant preserved.`,
+        `Request granted! ${target.name} admitted to Bay ${assignedBay} with safe sequence: ${evalResult.safetyResult?.safeSequence.join(' -> ')}.`,
         { vehicleId, safeSequence: evalResult.safetyResult?.safeSequence }
       );
     } else if (evalResult.status === 'REJECTED_UNSAFE') {
@@ -376,6 +383,15 @@ export function useSimulation() {
     return () => clearInterval(interval);
   }, [simRunning, simSpeed, stepSimulationTick]);
 
+  // One-click helper to evaluate and admit a waiting vehicle into an empty bay
+  const admitWaitingVehicle = useCallback((vehicleId: string) => {
+    const target = vehicles.find(v => v.id === vehicleId);
+    if (!target) return;
+    const need = calculateNeed(target.maxClaim, target.allocation);
+    const powerToRequest = Math.min(2, need[1] > 0 ? need[1] : 2);
+    return submitRequest(vehicleId, 1, powerToRequest);
+  }, [vehicles, submitRequest]);
+
   return {
     stationConfig,
     setStationConfig,
@@ -397,6 +413,7 @@ export function useSimulation() {
     logs,
     chartData,
     submitRequest,
+    admitWaitingVehicle,
     completeVehicleCharging,
     loadScenario,
     resetSimulation,
